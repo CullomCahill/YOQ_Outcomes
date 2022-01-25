@@ -1,0 +1,388 @@
+---
+title: "YOQ by Subscale and Diagnosis"
+output: html_document
+---
+
+```{r library setup}
+library(tidyverse)
+library(patchwork)
+library(rstatix)
+```
+## Consent Data  
+
+Information related to whether or not a client consented to thier data being used was recorded on a separate survey.  Thus it was important to merge and clean the consent files in order to join them to each individual survey.
+
+```{r consent}
+# Read in rds file with aggregrated consent data from consent_clean_PUBLIC.R
+consent <- readRDS("rds/consent master list.rds")
+# Rename "clientName" to ensure merge is correct
+consent <- consent %>% rename(clientName_con = clientName)
+```
+
+## YOQ
+
+After data was cleaned ("YOQ clean from orginal data_PUBLIC.R"), missing cases were imputed using linear regression.  Survey information was collected at 4 time points: 1. Day of Admission (DOA), 2. Day of Discharge (DOD), 3. 6 Months post-discharge (MO6), and 4. 1 Year post-discharge (YR1).  Imputation was performed to predict post-discharge values on total scores as well as all subscores.  Cases that were missing either DOA or DOD, and/or both discharge entries were thrown out.
+
+```{r yoq setup}
+# Read in YOQ file with imputed values (yoq_imput)
+# cleaning process file - YOQ clean from orginal data_PUBLIC.R
+# imputation process file - YOQ imputation_PUBLIC.R
+
+## Import YOQ with Imputed Values
+yoq_imput_org <- readRDS("rds/updated_imput.rds")
+
+# Merge consent file to YOQ_imput
+yoq_imput_con <- merge(yoq_imput_org, consent, by = (c("otClientId", "assignedToRelationship")))
+
+# Remove cases that declined consent and extra name column 
+yoq <- yoq_imput_con %>% 
+  filter(consent == "Consent") %>% 
+  select(-clientName_con)
+
+```
+
+The company was interested in displaying and overall and simple change over time graphic.  Note: all data presented contains some percentage of predicted values based on a linear model.  No difference was found statistically between these predicted values and the orginal data.
+
+```{r}
+
+## Sample Size Tables for legend
+YOQ_table <- yoq %>% 
+  filter(instance == "DOA") %>% 
+  group_by(surveyID, instance) %>% 
+  tally() %>% select(-instance)
+
+# Rename instance variable and factor
+yoq <- yoq %>% mutate(instance_rename = case_when(
+  instance == "DOA" ~ "Admission",
+  instance == "DOD" ~ "Discharge", 
+  instance == "MO6" ~ "6 Months Post",
+  instance == "YR1" ~ "1 Year Post"))
+
+yoq$instance_rename <- factor(yoq$instance_rename, levels = c("Admission", "Discharge", "6 Months Post", "1 Year Post"))
+
+
+# Plot of all yoq scores
+yoq_overall <- ggplot(yoq, aes(color = surveyID)) + 
+  stat_summary(aes(x=instance_rename, y=TOTAL), fun = mean, geom = "point") +
+  stat_summary(aes(x=instance_rename, y=TOTAL, group = surveyID), 
+               fun = mean, geom = "line") +
+  labs(title = "Overall YOQ Scores",
+       subtitle = "Measure of mental health functioning")+
+  scale_color_discrete(labels=paste(YOQ_table$surveyID, YOQ_table$n, sep = " = ")) +
+  theme_minimal()+
+  theme(legend.position = c(1,1), legend.justification = c(1,1)) + 
+  geom_hline(aes(yintercept = 47, 
+                 linetype = "Clinical Cutoff"
+                 )) +
+  scale_linetype_manual(name = "",
+                        values = c("Clinical Cutoff" = "dashed")) +
+  xlab("Time") + ylab("YOQ Total Score") +
+  theme(text = element_text(size = 15)) +
+  labs(color = "")
+yoq_overall
+
+# Save jpg image
+# ggsave("fig/yoq_overall.jpg", yoq_overall, width = 10, height = 7)
+```
+
+## YOQ by Subscale  
+
+The YOQ breaks out a clients total score up into 6 different subscales measuring different areas of mental health: 
+1. **Intrapersonal Distress (ID)**: measuring anxiety, depression, fearfulness, hopelessness and self-harm  
+2. **Somatic (S)**: measuring physical and somatic distress a child or adolescent may be experiencing  
+3. **Interpersonal Relations (IR)**: relating to issues in a client's relationship with their family, adults and peers.  
+4. **Social Problems (SP)**: assessing troublesome social behavior.  
+5. **Behavioral Dysfunction (BD)**: relating to a client's ability to organize tasks, concentrate, handle frustration, etc.  
+6. **Critical Items (CI)**: which describes issues which may need immediate inpatient services like suicidal thoughts or self harming behaviors (Burlingame et al., 2019)  
+
+```{r yoq subscale}
+
+YOQ_table <- 
+
+## Make each graph for use individually then bring together
+# Scale each plot based on the max and min of that particular subscore
+
+# ID  Intrapersonal Distress
+ID <-yoq %>% ggplot(aes(color = surveyID)) + 
+  stat_summary(aes(x=instance, y=ID), fun = mean, geom = "point") +
+  stat_summary(aes(x=instance, y=ID, group = surveyID), fun = mean, geom = "line", size = 1) +
+  geom_abline(intercept = 16, slope = 0, linetype = "dashed") +
+  # Max possible of ID is 32, min is 0
+  coord_cartesian(ylim = c(0, 32)) +
+  labs(subtitle = "Intrapersonal Distress") +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  xlab("Time")
+
+# S Somatic Problems
+S <- yoq %>% ggplot(aes(color = surveyID)) + 
+  stat_summary(aes(x=instance, y=S), fun = mean, geom = "point") +
+  stat_summary(aes(x=instance, y=S, group = surveyID), fun = mean, geom = "line", size = 1) +
+  geom_abline(intercept = 6, slope = 0, linetype = "dashed") +
+  coord_cartesian(ylim = c(3, 9)) +
+  labs(subtitle = "Somatic Problems") +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  xlab("Time")
+
+
+# IR Interpersonal Relationships
+IR <- yoq %>% ggplot(aes(color = surveyID)) + 
+  stat_summary(aes(x=instance, y=IR), fun = mean, geom = "point") +
+  stat_summary(aes(x=instance, y=IR, group = surveyID), fun = mean, geom = "line", size = 1) +
+  geom_abline(intercept = 3, slope = 0, linetype = "dashed") +
+  coord_cartesian(ylim = c(-8, 14)) +
+  labs(subtitle = "Interpersonal Relationships") +
+  theme_minimal() + 
+  theme(legend.position = "none") + 
+  xlab("Time")
+
+# SP Social Problems
+SP <- yoq %>% ggplot(aes(color = surveyID)) + 
+  stat_summary(aes(x=instance, y=SP), fun = mean, geom = "point") +
+  stat_summary(aes(x=instance, y=SP, group = surveyID), fun = mean, geom = "line", size = 1) +
+  geom_abline(intercept = 3, slope = 0, linetype = "dashed") +
+  coord_cartesian(ylim = c(-7, 13)) +
+  labs(subtitle = "Social Problems") +
+  theme_minimal() + 
+  theme(legend.position = "none") +
+  xlab("Time")
+
+# BD Behavioral Dysfunction
+BD <- yoq %>% ggplot(aes(color = surveyID)) + 
+  stat_summary(aes(x=instance, y=BD), fun = mean, geom = "point") +
+  stat_summary(aes(x=instance, y=BD, group = surveyID), fun = mean, geom = "line", size = 1) +
+  geom_abline(intercept = 11, slope = 0, linetype = "dashed") +
+  coord_cartesian(ylim = c(1,21)) +
+  labs(subtitle = "Behavioral Dysfunction") +
+  theme_minimal() + 
+  theme(legend.position = "none") +
+  xlab("Time")
+
+# CI Critical Items
+CI <- yoq %>% ggplot(aes(color = surveyID)) + 
+  stat_summary(aes(x=instance, y=CI), fun = mean, geom = "point") +
+  stat_summary(aes(x=instance, y=CI, group = surveyID), fun = mean, geom = "line", size = 1) +
+  geom_abline(intercept = 6, slope = 0, linetype = "dashed") +
+  coord_cartesian(ylim = c(3, 9)) +
+  labs(subtitle = "Critical Items", color = "Surveyed Individual") +
+  theme_minimal()+
+  theme(legend.position = "none") +
+  xlab("Time")
+  
+
+
+## Bring them all together 
+# YOQ_sub %>% filter(instance=="DOA") %>% filter(subscore=="CI") %>% group_by(surveyID) %>% tally()
+YOQ_subscore_grid <- ID + S + IR + SP + BD + CI + plot_annotation(title = "YOQ by Subscale")
+
+YOQ_subscore_grid
+
+
+# Save jpg
+ggsave("fig/YOQ_subscore_grid.jpg", YOQ_subscore_grid, width = 10, height = 7)
+
+
+```
+
+## By Diagnosis  
+
+
+```{r yoq_diag, setup}
+
+
+# Bring in dataset pulled from bestNotes with diagnosis and client ID numbers
+diag <- readRDS("rds/bestNotes_diag_wide.rds")
+
+yoq_diag1 <- inner_join(yoq, diag, by = "otClientId")
+# This is now a full dataset of all the YOQ scores by diagnosis 
+# (repeated ID's due to parents.stus etc)
+
+# Go to long
+yoq_diag2 <- gather(yoq_diag1, key = "diag_instance", 
+                    value = "diagnosis", 18:27)   # 4840 obs
+
+# Convert to na and remove Remove NA's
+yoq_diag3 <- yoq_diag2 %>% 
+  mutate_all(na_if, "") %>% 
+  mutate_all(na_if, "NONE") %>% 
+  mutate_all(na_if, "R/O")
+
+
+# Change low amounts of data to "other" category in "diagnosis" column
+yoq_diag3$diagnosis <- recode(yoq_diag3$diagnosis, life = "other", 
+                              neuro = "other", personality = "other", 
+                              tech = "other")
+# Remove NA's
+yoq_diag_cc1 <- yoq_diag3 %>% drop_na(diagnosis)  ## 2488
+# Remove duplicates
+yoq_diag <- yoq_diag_cc1[!duplicated(yoq_diag_cc1[c(1:14, 17)]),]
+
+# Change to factors
+yoq_diag[,c("diagnosis", "diag_instance")] <- lapply(
+  yoq_diag[,c("diagnosis", "diag_instance")], factor)
+```
+
+
+```{r}
+
+yoq_diag_plot <- yoq_diag %>% 
+  ggplot(aes(color = surveyID)) + 
+  stat_summary(aes(x=instance, y=TOTAL), fun = mean, geom = "point") +
+  stat_summary(aes(x=instance, y=TOTAL, group = surveyID), fun = mean, geom = "line") +
+  geom_abline(intercept = 47, slope = 0, linetype = "dashed") +
+  labs(title = "YOQ by Diagnosis", 
+       caption = "Students with more than one diagnosis appear multiple times on plots")+ 
+  theme_minimal() +
+  facet_wrap(~diagnosis)
+
+# Print
+yoq_diag_plot
+
+
+# Save jpg
+ggsave("fig/yoq_diag_plot.jpg", yoq_diag_plot, width = 10, height = 7)
+
+
+```
+Note: sample sizes did not end up being large enough to draw conclusive findings from this analysis.  
+
+## YOQ by post discharge placement  
+
+```{r}
+## Aftercare data setup ----
+
+AQD <- readRDS("rds/AQD_clean.rds")
+PQPD_19.1 <- readRDS("rds/PQPD_19.rds")
+
+# Recode the residency options
+AQD$residency_recode <- as.factor(recode(AQD$residency, 
+                         ACADEMIC_BOARDING = "boarding", 
+                         ALONE = "home",
+                         FATHER = "home",
+                         MOTHER = "home", 
+                         PARENTS = "home", 
+                         RESIDENT_TREAT = "boarding", 
+                         OTHER = "other",
+                         ROOMMATE = "home",
+                         TBS = "boarding")) 
+# simplify data frame
+AQD_res <- AQD %>% select(CID:LastName, DOB, residency, residency_recode) %>% 
+  na.omit()
+
+
+# And for PQPD
+# Relabel aftercare setting to transistion 
+PQPD_res <- PQPD_19.1 %>% rename(residency = Q2a) %>% 
+  mutate(residency_recode = recode(residency, A = "home", B = "home", 
+                            C = "boarding", D = "boarding",
+                            E = "other", `F` = "other", 
+                            G = "home", H = "other", I = "other")) %>% 
+  filter(residency != "Currently, where is your child living?") %>% 
+  select(CID:LastName, DOB, residency, residency_recode) %>% 
+  mutate_all(na_if, "") %>% drop_na(residency_recode)
+
+# Bind objects together
+res <- rbind(PQPD_res, AQD_res)
+
+# Remove duplicates and restructure dates
+res <- res[!duplicated(res["CID"]),]
+res$DOB <- as.Date(res$DOB, "%m/%d/%Y")
+
+# This survey only has the CID number, so we need to add otClientId number
+master_Id <- readRDS("rds/master list of names and id.rds")
+
+
+# merge this to res
+res_otId <- merge(res, master_Id, by.x = "CID", by.y = "remoteClientId")
+
+
+# MERGE YOQ Scores to residency status ----
+
+yoq_res <- merge(yoq, res_otId, by = "otClientId")
+# yoq_res <- yoq_res %>% select(CID, clientName, FirstName, LastName, 
+#                               surveyID:residency_recode)
+# 
+
+## Aftercare Plot ----
+
+
+
+# Recode residency
+yoq_res$residency_recode <- recode(yoq_res$residency_recode,
+                                    after_care = "boarding")
+
+
+# By PARENT VS STUDENT
+par.tally <- yoq_res %>% 
+  filter(surveyID == "Parent", residency_recode != "other") %>% 
+  group_by(residency_recode) %>% filter(instance == "DOA") %>% tally()
+
+par.place.plot <- yoq_res %>% 
+  filter(surveyID == "Parent", residency_recode != "other") %>% 
+  ggplot(aes(color = residency_recode)) + 
+  stat_summary(aes(x=instance, y=TOTAL), fun = mean, geom = "point") +
+  stat_summary(aes(x=instance, y=TOTAL, group = residency_recode), 
+               fun = mean, geom = "line") +
+  geom_abline(intercept = 46, slope = 0, 
+              linetype = "dashed") +
+  labs(subtitle = "Parents",
+       caption = "Parent Cutoff = 46",
+       color = "Residency")+
+  coord_cartesian(ylim = c(30, 105))+
+  scale_color_discrete(labels=paste(par.tally$residency_recode, 
+                                    par.tally$n, sep = " = ")) +
+  theme_minimal() +
+  theme(legend.position = c(1,1), legend.justification = c(1,1))
+
+
+## STUDENT PLACEMENT PLOT
+stu.tally <- yoq_res %>% 
+  filter(surveyID == "Student", residency_recode != "other") %>% 
+  group_by(residency_recode) %>% filter(instance == "DOA") %>% tally()
+
+stu.place.plot <- yoq_res %>% 
+  filter(surveyID == "Student", residency_recode != "other") %>% 
+  ggplot(aes(color = residency_recode)) + 
+  stat_summary(aes(x=instance, y=TOTAL), fun = mean, geom = "point") +
+  stat_summary(aes(x=instance, y=TOTAL, group = residency_recode), 
+               fun = mean, geom = "line") +
+  geom_abline(intercept = 46, slope = 0, 
+              linetype = "dashed") +
+  labs(title = "YOQ Scores by Post-Discharge Residency",
+       subtitle = "Students",
+       caption = "Student Cutoff = 47", 
+       color = "Residency")+
+  coord_cartesian(ylim = c(30, 105))+
+  scale_color_discrete(labels=paste(stu.tally$residency_recode, 
+                                    stu.tally$n, sep = " = ")) +
+  theme_minimal() +
+  theme(legend.position = c(1,1), legend.justification = c(1,1))
+
+yoq_post_dis <- stu.place.plot + par.place.plot
+
+# Print
+yoq_post_dis
+
+# Save jpg
+ggsave("fig/yoq_post_dis.jpg", yoq_post_dis, width = 10, height = 7)
+
+```
+
+
+```{r}
+yoq_res %>% 
+  filter(residency_recode != "other") %>% 
+  group_by(instance, surveyID) %>% 
+  t_test(TOTAL ~ residency_recode) %>%
+  adjust_pvalue(method = "BH") %>% 
+  add_significance()
+```
+
+No statistical difference was shown between student scores but there was a statistical difference for parent scores at all points other than admission suggesting that parents who bring their child home at discharge rate them as doing better but at 6 months and a year out rate them as actually doing a bit worse.
+
+**There's gotta be a better cooler way to think about and visualize that, maybe even just bolding or highlighting in some way the statistially significant differnt values?**
+
+
+
+
