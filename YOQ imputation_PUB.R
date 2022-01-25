@@ -10,6 +10,9 @@ library(patchwork)
 
 
 ### Data Setup ----
+
+setwd("C:/Users/cullo/OneDrive/Desktop/One Cloud/ELEMENTS")
+
 # Load YOQ
 YOQ_full <- readRDS("YOQ/rds/YOQ_ver1.rds")  # 4110 obs
 # Load clinical cutoff scale
