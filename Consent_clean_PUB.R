@@ -91,7 +91,7 @@ con_mast %>% group_by( consent) %>% tally()
 
 
 ## Save this consent file as a rds
-setwd("C:/Users/cullo/OneDrive/Desktop/One Cloud/Resume 2022")
-saveRDS(con_mast, "Github Portfolio/rds/consent master list.rds")
+# setwd("C:/Users/cullo/OneDrive/Desktop/One Cloud/Resume 2022")
+# saveRDS(con_mast, "Github Portfolio/rds/consent master list.rds")
 
 
